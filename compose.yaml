@@ -1,0 +1,88 @@
+services:
+  postgres:
+    container_name: postgres
+    image: postgres:17-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: ${POSTGRES_USER-user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?error}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER-user} -d keycloak" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.6.3
+    container_name: keycloak
+    environment:
+      KC_DB: postgres
+      KC_DB_URL_HOST: postgres
+      KC_DB_URL_DATABASE: keycloak
+      KC_DB_USERNAME: ${POSTGRES_USER-user}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:?error}
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USER:?error}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?error}
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+      KC_HTTP_ENABLED: "true"
+    command:
+      - start-dev
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  twatter-backend:
+    container_name: twatter-backend
+    build:
+      context: ./twatter-backend
+      dockerfile: Dockerfile
+    restart: always
+    profiles:
+      - production
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/twatter
+      - SPRING_DATASOURCE_USERNAME=${POSTGRES_USER-user}
+      - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD:?error}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8081:8081"
+    networks:
+      - app-network
+
+  twatter-frontend:
+    container_name: twatter-frontend
+    build:
+      context: ./twatter-frontend
+      dockerfile: Dockerfile
+    restart: always
+    profiles:
+      - production
+    ports:
+      - "4200:80"
+    depends_on:
+      - twatter-backend
+    networks:
+      - app-network
+
+volumes:
+  postgres_data:
+    name: postgres_data
+
+networks:
+  app-network:
+    name: app-network
