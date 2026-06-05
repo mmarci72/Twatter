@@ -1,0 +1,2 @@
+cd twatter-frontend
+npx lint-staged
